@@ -1,0 +1,11 @@
+# Picture directories
+person_captures/
+motion_captures/
+
+# Model files
+*.pt
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
