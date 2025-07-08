@@ -1,6 +1,7 @@
 # Picture directories
 person_captures/
 motion_captures/
+yolo_captures/
 
 # Model files
 *.pt
@@ -9,3 +10,5 @@ motion_captures/
 __pycache__/
 *.pyc
 *.pyo
+.DS_Store
+.vscode/launch.json

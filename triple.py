@@ -275,7 +275,7 @@ try:
                                 now = time.time()
                                 if now - last_saved_time >= 1.0:
                                     from datetime import datetime
-                                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                                     filename = os.path.join(save_dir, f"{timestamp}_person_track.jpg")
                                     if IS_PI:
                                         cv2.imwrite(filename, cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
@@ -299,7 +299,7 @@ try:
             now = time.time()
             if now - last_saved_time >= 1.0:
                 from datetime import datetime
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 filename = os.path.join(save_dir, f"{timestamp}_person_track.jpg")
                 if IS_PI:
                     cv2.imwrite(filename, cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))

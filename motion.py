@@ -2,33 +2,82 @@ import cv2
 import numpy as np
 import time
 import os
+import sys
 from datetime import datetime
 import argparse
 
-# Initialize argument parser
 parser = argparse.ArgumentParser()
 parser.add_argument('--preview', action='store_true', help='Enable OpenCV preview window')
 parser.add_argument('--camera', type=int, default=0, help='Camera index for OpenCV (macOS/webcam)')
+parser.add_argument('--force-pi', action='store_true', help='Force use of PiCamera2 (Raspberry Pi)')
 args = parser.parse_args()
 
-# Initialize camera for MacBook Pro (OpenCV)
-cap = cv2.VideoCapture(args.camera)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+# Platform detection
+def is_raspberry_pi():
+    if args.force_pi:
+        print('[INFO] Forcing Raspberry Pi mode via --force-pi')
+        return True
+    try:
+        with open('/proc/device-tree/model') as f:
+            return 'Raspberry Pi' in f.read()
+    except Exception:
+        return False
+
+IS_PI = is_raspberry_pi()
+print(f"[INFO] Detected Raspberry Pi: {IS_PI}")
+
+# Initialize camera
+if IS_PI:
+    try:
+        from picamera2 import Picamera2
+    except ImportError:
+        print("Please install picamera2: pip install picamera2")
+        sys.exit(1)
+    picam2 = Picamera2()
+    picam2.preview_configuration.main.size = (1920, 1080)
+    picam2.preview_configuration.main.format = "RGB888"
+    picam2.start()
+    time.sleep(2)
+else:
+    cap = cv2.VideoCapture(args.camera)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
 
 prev_frame = None
 
 save_dir = "motion_captures"
 os.makedirs(save_dir, exist_ok=True)
+
+# Clear all existing pictures before starting
+import glob
+for file_path in glob.glob(os.path.join(save_dir, "*.jpg")):
+    try:
+        os.remove(file_path)
+        print(f"[INFO] Removed: {file_path}")
+    except Exception as e:
+        print(f"[WARNING] Could not remove {file_path}: {e}")
+print(f"[INFO] Cleared all existing images from {save_dir}")
+
 last_saved_time = 0
+
+# FPS calculation variables
+fps_counter = 0
+fps_start_time = time.time()
+fps_display = 0.0
 
 try:
     while True:
-        ret, frame = cap.read()
-        if not ret:
-            print("Failed to capture frame from webcam.")
-            break
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        # Get frame
+        if IS_PI:
+            frame = picam2.capture_array()
+            frame = cv2.rotate(frame, cv2.ROTATE_180)
+            gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+        else:
+            ret, frame = cap.read()
+            if not ret:
+                print("Failed to capture frame from webcam.")
+                break
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         gray = cv2.GaussianBlur(gray, (21, 21), 0)
 
         if prev_frame is None:
@@ -53,12 +102,27 @@ try:
         if motion_detected:
             now = time.time()
             if now - last_saved_time >= 1.0:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 filename = os.path.join(save_dir, f"motion_{timestamp}.jpg")
-                cv2.imwrite(filename, frame)
+                if IS_PI:
+                    cv2.imwrite(filename, cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+                else:
+                    cv2.imwrite(filename, frame)
                 last_saved_time = now
         else:
             last_saved_time = 0  # Reset timer when no motion
+
+        # Calculate and display FPS
+        fps_counter += 1
+        current_time = time.time()
+        if current_time - fps_start_time >= 1.0:
+            fps_display = fps_counter / (current_time - fps_start_time)
+            fps_counter = 0
+            fps_start_time = current_time
+        
+        # Display FPS on frame
+        cv2.putText(frame, f"FPS: {fps_display:.1f}", (10, 30), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
 
         if args.preview:
             cv2.imshow("Motion Detection", frame)
@@ -67,8 +131,12 @@ try:
         if args.preview and cv2.waitKey(1) & 0xFF == ord('q'):
             break
 finally:
-    cv2.destroyAllWindows()
-    cap.release()
+    if args.preview:
+        cv2.destroyAllWindows()
+    if IS_PI:
+        picam2.close()
+    else:
+        cap.release()
 
 
 

@@ -4,10 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a computer vision project for motion detection and car tracking using OpenCV and YOLOv8. The project consists of two main Python scripts:
+This is a computer vision project for motion detection and object tracking using OpenCV and YOLOv8. The project consists of three main Python scripts:
 
 - `motion.py`: Basic motion detection that captures frames when motion is detected
-- `triple.py`: Advanced motion detection with car recognition using YOLOv8 and object tracking
+- `triple.py`: Advanced motion detection with person recognition using YOLOv8 and OpenCV tracking
+- `yolo.py`: Pure YOLO object detection for all 80 COCO classes with movement tracking
 
 ## Dependencies
 
@@ -39,13 +40,21 @@ python motion.py [--preview] [--camera INDEX]
 - `--preview`: Shows live OpenCV window
 - `--camera INDEX`: Specify camera index (default: 0)
 
-### Car Detection and Tracking (triple.py)
+### Person Detection and Tracking (triple.py)
 ```bash
 python triple.py [--preview] [--camera INDEX] [--force-pi]
 ```
 - `--preview`: Shows live OpenCV window
 - `--camera INDEX`: Specify camera index (default: 0)
 - `--force-pi`: Force Raspberry Pi camera mode
+
+### YOLO Object Detection (yolo.py)
+```bash
+python yolo.py [--preview] [--camera INDEX] [--confidence FLOAT]
+```
+- `--preview`: Shows live OpenCV window
+- `--camera INDEX`: Specify camera index (default: 0)
+- `--confidence FLOAT`: Detection confidence threshold (default: 0.25)
 
 ## Architecture
 
@@ -73,7 +82,8 @@ The `CVTracker` class in `triple.py` implements:
 ## Output Directories
 
 - `motion_captures/`: Images saved by motion.py
-- `triple_captures/`: Images saved by triple.py (includes car detection and tracking)
+- `person_captures/`: Images saved by triple.py (includes person detection and tracking)
+- `yolo_captures/`: Images saved by yolo.py (all detected objects with timestamps)
 
 ## Configuration
 
@@ -83,6 +93,34 @@ In `triple.py`, adjust `MOTION_SENSITIVITY` (default: 500) to control motion det
 - Higher values = less sensitive
 
 ### Detection Thresholds
-- Car detection confidence threshold: 0.30 (in triple.py:188)
-- Motion detection threshold: 25 (in both scripts)
-- Minimum movement for tracking: 10 pixels (in triple.py:130)
+- Person detection confidence threshold: 0.30 (in triple.py)
+- YOLO detection confidence threshold: 0.25 (in yolo.py, configurable via --confidence)
+- Motion detection threshold: 25 (in motion.py and triple.py)
+- Minimum movement for tracking: 10 pixels (in triple.py and yolo.py)
+
+## Performance Comparison
+
+### yolo.py (Pure YOLO Detection)
+- **Performance**: ~15 FPS
+- **Approach**: Direct YOLO detection every frame
+- **Best for**: Real-time detection of all object types, consistent performance
+- **Features**: Movement arrows showing 1-second displacement, FPS display, color-coded object types
+
+### triple.py (Motion + YOLO + OpenCV Tracking)
+- **Performance**: ~8 FPS  
+- **Approach**: Motion detection → YOLO → OpenCV tracking
+- **Best for**: Focused person tracking with motion pre-filtering
+- **Features**: Motion rectangles, OpenCV tracking with movement vectors, automatic cleanup
+
+### motion.py (Basic Motion Detection)
+- **Performance**: Highest FPS
+- **Approach**: Frame differencing and contour detection only
+- **Best for**: Simple motion detection without object classification
+
+### Shared Conventions
+- Display FPS in green text at (10, 30)
+- Save images with timestamp format: `YYYYMMDD_HHMMSS`
+- Save directories: `{type}_captures/`
+- save picture as fast as one per second
+- clear all files before starting
+- Use .gitignore for captures directories and .pt files
