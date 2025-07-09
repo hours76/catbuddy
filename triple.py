@@ -2,9 +2,7 @@ import argparse
 import os
 import sys
 import time
-import platform
 import cv2
-import numpy as np
 
 try:
     from ultralytics import YOLO
@@ -16,9 +14,10 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--preview', action='store_true', help='Enable OpenCV preview window')
 parser.add_argument('--camera', type=int, default=0, help='Camera index for OpenCV (macOS/webcam)')
 parser.add_argument('--force-pi', action='store_true', help='Force use of PiCamera2 (Raspberry Pi)')
+parser.add_argument('--fps', type=float, default=0, help='Limit processing FPS (0 = unlimited)')
 args = parser.parse_args()
 
-save_dir = "person_captures"
+save_dir = "triple_captures"
 os.makedirs(save_dir, exist_ok=True)
 
 # Clear all existing pictures before starting
@@ -63,8 +62,8 @@ else:
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
 
-model = YOLO("yolov8n.pt")
-person_class_id = next(k for k, v in model.model.names.items() if v.lower() == "person")
+model = YOLO("models/yolov8n.pt")
+object_class_id = next(k for k, v in model.model.names.items() if v.lower() == "person")
 
 prev_gray = None
 
@@ -76,7 +75,7 @@ fps_counter = 0
 fps_start_time = time.time()
 fps_display = 0.0
 
-# Use OpenCV tracker after cat detection
+# Use OpenCV tracker after object detection
 class CVTracker:
     def __init__(self, tracker_type="CSRT"):
         self.tracker_type = tracker_type
@@ -87,6 +86,7 @@ class CVTracker:
         self.prev_center = None
         self.curr_center = None
         self.last_movement_time = time.time()
+        self.use_centroid_tracking = False
 
     def start(self, frame, bbox):
         # bbox: (x1, y1, x2, y2)
@@ -98,74 +98,147 @@ class CVTracker:
         self.curr_center = ((x1 + x2) // 2, (y1 + y2) // 2)
         self.last_movement_time = time.time()
         tracker_bbox = (x1, y1, x2 - x1, y2 - y1)
-        # Robust tracker creation for OpenCV 4.x and legacy
+        # Try multiple tracker types with comprehensive fallback
         self.tracker = None
-        try:
-            if self.tracker_type == "CSRT":
-                if hasattr(cv2, 'TrackerCSRT_create'):
-                    self.tracker = cv2.TrackerCSRT_create()
-                elif hasattr(cv2, 'legacy') and hasattr(cv2.legacy, 'TrackerCSRT_create'):
-                    self.tracker = cv2.legacy.TrackerCSRT_create()
-            elif self.tracker_type == "KCF":
-                if hasattr(cv2, 'TrackerKCF_create'):
-                    self.tracker = cv2.TrackerKCF_create()
-                elif hasattr(cv2, 'legacy') and hasattr(cv2.legacy, 'TrackerKCF_create'):
-                    self.tracker = cv2.legacy.TrackerKCF_create()
-            # Fallback to MOSSE
-            if self.tracker is None:
-                if hasattr(cv2, 'TrackerMOSSE_create'):
-                    self.tracker = cv2.TrackerMOSSE_create()
-                elif hasattr(cv2, 'legacy') and hasattr(cv2.legacy, 'TrackerMOSSE_create'):
-                    self.tracker = cv2.legacy.TrackerMOSSE_create()
-        except Exception:
-            self.tracker = None
-        if self.tracker is not None:
-            self.tracker.init(frame, tracker_bbox)
+        tracker_types = ["CSRT", "KCF", "MOSSE", "MIL", "BOOSTING", "TLD", "MEDIANFLOW"]
+        
+        for tracker_name in tracker_types:
+            try:
+                # Try modern OpenCV tracker creation
+                if tracker_name == "CSRT":
+                    if hasattr(cv2, 'TrackerCSRT_create'):
+                        self.tracker = cv2.TrackerCSRT_create()
+                    elif hasattr(cv2, 'legacy') and hasattr(cv2.legacy, 'TrackerCSRT_create'):
+                        self.tracker = cv2.legacy.TrackerCSRT_create()
+                elif tracker_name == "KCF":
+                    if hasattr(cv2, 'TrackerKCF_create'):
+                        self.tracker = cv2.TrackerKCF_create()
+                    elif hasattr(cv2, 'legacy') and hasattr(cv2.legacy, 'TrackerKCF_create'):
+                        self.tracker = cv2.legacy.TrackerKCF_create()
+                elif tracker_name == "MOSSE":
+                    if hasattr(cv2, 'TrackerMOSSE_create'):
+                        self.tracker = cv2.TrackerMOSSE_create()
+                    elif hasattr(cv2, 'legacy') and hasattr(cv2.legacy, 'TrackerMOSSE_create'):
+                        self.tracker = cv2.legacy.TrackerMOSSE_create()
+                elif tracker_name == "MIL":
+                    if hasattr(cv2, 'TrackerMIL_create'):
+                        self.tracker = cv2.TrackerMIL_create()
+                    elif hasattr(cv2, 'legacy') and hasattr(cv2.legacy, 'TrackerMIL_create'):
+                        self.tracker = cv2.legacy.TrackerMIL_create()
+                elif tracker_name == "BOOSTING":
+                    if hasattr(cv2, 'TrackerBoosting_create'):
+                        self.tracker = cv2.TrackerBoosting_create()
+                    elif hasattr(cv2, 'legacy') and hasattr(cv2.legacy, 'TrackerBoosting_create'):
+                        self.tracker = cv2.legacy.TrackerBoosting_create()
+                elif tracker_name == "TLD":
+                    if hasattr(cv2, 'TrackerTLD_create'):
+                        self.tracker = cv2.TrackerTLD_create()
+                    elif hasattr(cv2, 'legacy') and hasattr(cv2.legacy, 'TrackerTLD_create'):
+                        self.tracker = cv2.legacy.TrackerTLD_create()
+                elif tracker_name == "MEDIANFLOW":
+                    if hasattr(cv2, 'TrackerMedianFlow_create'):
+                        self.tracker = cv2.TrackerMedianFlow_create()
+                    elif hasattr(cv2, 'legacy') and hasattr(cv2.legacy, 'TrackerMedianFlow_create'):
+                        self.tracker = cv2.legacy.TrackerMedianFlow_create()
+                
+                # If tracker was created successfully, try to initialize it
+                if self.tracker is not None:
+                    self.tracker.init(frame, tracker_bbox)
+                    print(f"[INFO] Successfully initialized {tracker_name} tracker")
+                    break
+                    
+            except Exception as e:
+                print(f"[DEBUG] Failed to create {tracker_name} tracker: {e}")
+                self.tracker = None
+                continue
+        
+        # If no OpenCV tracker works, use simple centroid tracking as fallback
+        if self.tracker is None:
+            print("[INFO] No OpenCV tracker available, using simple centroid tracking")
+            self.use_centroid_tracking = True
+            self.tracker = "centroid"  # Use string to indicate centroid tracking
         else:
-            print("[ERROR] No supported OpenCV tracker found on this system.")
-            self.active = False
+            self.use_centroid_tracking = False
 
     def update(self, frame):
         if self.active and self.tracker is not None:
-            ok, bbox = self.tracker.update(frame)
-            if ok:
-                x, y, w, h = [int(v) for v in bbox]
-                self.last_bbox = (x, y, x + w, y + h)
-                self.prev_center = self.curr_center
-                self.curr_center = (x + w // 2, y + h // 2)
-                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 2)
-                cv2.putText(frame, 'Tracking', (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-                movement = 0
-                if self.prev_center and self.curr_center:
-                    cv2.arrowedLine(frame, self.prev_center, self.curr_center, (255, 0, 255), 2, tipLength=0.3)
-                    dx = self.curr_center[0] - self.prev_center[0]
-                    dy = self.curr_center[1] - self.prev_center[1]
-                    movement = (dx**2 + dy**2) ** 0.5
-                    print(f"Movement vector: dx={dx}, dy={dy}, movement={movement:.2f}")
-                    # If movement is significant, update last_movement_time
-                    if movement >= 10:
-                        self.last_movement_time = time.time()
-                self.last_seen = time.time()
-                # Stop tracking if only small movement (<10) for 3 seconds
-                if time.time() - self.last_movement_time > 3.0:
-                    print("[INFO] Only small movement (<10) for 3 seconds, stopping tracker.")
-                    self.active = False
+            # Handle centroid tracking fallback
+            if self.use_centroid_tracking:
+                # Simple centroid tracking - just show last known position
+                if self.last_bbox:
+                    x1, y1, x2, y2 = self.last_bbox
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                    cv2.putText(frame, 'Centroid Tracking', (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                    
+                    # Show movement arrow if we have previous center
+                    if self.prev_center and self.curr_center:
+                        cv2.arrowedLine(frame, self.prev_center, self.curr_center, (255, 0, 255), 2, tipLength=0.3)
+                    
+                    # Auto-stop centroid tracking after 5 seconds
+                    if time.time() - self.last_seen > 5.0:
+                        print("[INFO] Centroid tracking timeout, stopping tracker.")
+                        self.active = False
+                        self.tracker = None
+                        self.last_bbox = None
+                        self.prev_center = None
+                        self.curr_center = None
+            else:
+                # Use OpenCV tracker
+                ok, bbox = self.tracker.update(frame)
+                if ok:
+                    x, y, w, h = [int(v) for v in bbox]
+                    self.last_bbox = (x, y, x + w, y + h)
+                    self.prev_center = self.curr_center
+                    self.curr_center = (x + w // 2, y + h // 2)
+                    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 2)
+                    cv2.putText(frame, 'Tracking', (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                    movement = 0
+                    if self.prev_center and self.curr_center:
+                        cv2.arrowedLine(frame, self.prev_center, self.curr_center, (255, 0, 255), 2, tipLength=0.3)
+                        dx = self.curr_center[0] - self.prev_center[0]
+                        dy = self.curr_center[1] - self.prev_center[1]
+                        movement = (dx**2 + dy**2) ** 0.5
+                        print(f"Movement vector: dx={dx}, dy={dy}, movement={movement:.2f}")
+                        # If movement is significant, update last_movement_time
+                        if movement >= 10:
+                            self.last_movement_time = time.time()
+                    self.last_seen = time.time()
+                    # Stop tracking if only small movement (<10) for 3 seconds
+                    if time.time() - self.last_movement_time > 3.0:
+                        print("[INFO] Only small movement (<10) for 3 seconds, stopping tracker.")
+                        self.active = False
+                        self.tracker = None
+                        self.last_bbox = None
+                        self.prev_center = None
+                        self.curr_center = None
+                else:
+                    self.active = False  # Lost tracking, return to motion detection
                     self.tracker = None
                     self.last_bbox = None
                     self.prev_center = None
                     self.curr_center = None
-            else:
-                self.active = False  # Lost tracking, return to motion detection
-                self.tracker = None
-                self.last_bbox = None
-                self.prev_center = None
-                self.curr_center = None
         return frame
 
 cv_tracker = CVTracker()
 
+# FPS limiting variables
+frame_time_target = 1.0 / args.fps if args.fps > 0 else 0
+last_frame_time = time.time()
+
+if args.fps > 0:
+    print(f"[INFO] FPS limited to {args.fps} FPS")
+else:
+    print("[INFO] FPS unlimited")
+
 try:
     while True:
+        # FPS limiting
+        if args.fps > 0:
+            current_time = time.time()
+            elapsed = current_time - last_frame_time
+            if elapsed < frame_time_target:
+                time.sleep(frame_time_target - elapsed)
+            last_frame_time = time.time()
         # Get frame
         if IS_PI:
             frame = picam2.capture_array()
@@ -249,48 +322,69 @@ try:
                 # Add combined rectangle
                 combined_rects.append((min_x, min_y, max_x, max_y))
             
-            # Find the largest combined rectangle
+            # Process all combined rectangles (not just the largest)
             if combined_rects:
-                largest_rect = max(combined_rects, key=lambda r: (r[2] - r[0]) * (r[3] - r[1]))
-                x, y, max_x, max_y = largest_rect
-                w, h = max_x - x, max_y - y
+                # Sort by area (largest first) and process up to 3 rectangles
+                sorted_rects = sorted(combined_rects, key=lambda r: (r[2] - r[0]) * (r[3] - r[1]), reverse=True)
                 
-                roi = rgb_frame[y:y+h, x:x+w]
-                results = model(roi)
-                for r in results:
-                    for box, cls, conf in zip(r.boxes.xyxy, r.boxes.cls, r.boxes.conf):
-                        if conf >= 0.30:  # Show all objects with confidence >= 0.30
-                            x1, y1, x2, y2 = map(int, box)
-                            abs_box = (x+x1, y+y1, x+x2, y+y2)
-                            class_name = model.model.names[int(cls)]
-                            
-                            # Different colors for different object types
-                            if int(cls) == person_class_id:
-                                color = (0, 255, 0)  # Green for people/faces
-                                cv2.rectangle(frame, (abs_box[0], abs_box[1]), (abs_box[2], abs_box[3]), color, 2)
-                                cv2.putText(frame, f"{class_name} {conf:.2f}", (abs_box[0], abs_box[1]-4),
-                                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-                                # Start OpenCV tracker after person detection
-                                cv_tracker.start(frame, abs_box)
-                                now = time.time()
-                                if now - last_saved_time >= 1.0:
-                                    from datetime import datetime
-                                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                    filename = os.path.join(save_dir, f"{timestamp}_person_track.jpg")
-                                    if IS_PI:
-                                        cv2.imwrite(filename, cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
-                                    else:
-                                        cv2.imwrite(filename, frame)
-                                    last_saved_time = now
-                            else:
-                                color = (255, 0, 255)  # Magenta for other objects
-                                cv2.rectangle(frame, (abs_box[0], abs_box[1]), (abs_box[2], abs_box[3]), color, 2)
-                                cv2.putText(frame, f"{class_name} {conf:.2f}", (abs_box[0], abs_box[1]-4),
-                                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-                
-                # Draw motion detection rectangle AFTER object detection (so it's on top)
-                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 255), 4)  # Cyan, thicker line
-                cv2.putText(frame, "MOTION", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+                for rect_idx, rect in enumerate(sorted_rects[:3]):  # Process up to 3 largest rectangles
+                    x, y, max_x, max_y = rect
+                    w, h = max_x - x, max_y - y
+                    
+                    # Add padding to capture more context (10% of width/height)
+                    padding_x = max(20, int(w * 0.1))
+                    padding_y = max(20, int(h * 0.1))
+                    
+                    # Apply padding with bounds checking
+                    padded_x = max(0, x - padding_x)
+                    padded_y = max(0, y - padding_y)
+                    padded_w = min(rgb_frame.shape[1] - padded_x, w + 2 * padding_x)
+                    padded_h = min(rgb_frame.shape[0] - padded_y, h + 2 * padding_y)
+                    
+                    roi = rgb_frame[padded_y:padded_y+padded_h, padded_x:padded_x+padded_w]
+                    results = model(roi)
+                    
+                    for r in results:
+                        for box, cls, conf in zip(r.boxes.xyxy, r.boxes.cls, r.boxes.conf):
+                            if conf >= 0.30:  # Show all objects with confidence >= 0.30
+                                x1, y1, x2, y2 = map(int, box)
+                                # Adjust coordinates back to original frame (account for padding)
+                                abs_box = (padded_x+x1, padded_y+y1, padded_x+x2, padded_y+y2)
+                                class_name = model.model.names[int(cls)]
+                                
+                                # Different colors for different object types
+                                if int(cls) == object_class_id:
+                                    color = (0, 255, 255)  # Yellow for object detected
+                                    cv2.rectangle(frame, (abs_box[0], abs_box[1]), (abs_box[2], abs_box[3]), color, 2)
+                                    cv2.putText(frame, f"{class_name} {conf:.2f}", (abs_box[0], abs_box[1]-4),
+                                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+                                    # Start OpenCV tracker after object detection
+                                    cv_tracker.start(frame, abs_box)
+                                    now = time.time()
+                                    if now - last_saved_time >= 1.0:
+                                        from datetime import datetime
+                                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                        filename = os.path.join(save_dir, f"{timestamp}_triple_object.jpg")
+                                        if IS_PI:
+                                            cv2.imwrite(filename, cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+                                        else:
+                                            cv2.imwrite(filename, frame)
+                                        last_saved_time = now
+                                    # Stop processing more rectangles once object is detected and tracking starts
+                                    break
+                                else:
+                                    color = (255, 0, 255)  # Magenta for other objects
+                                    cv2.rectangle(frame, (abs_box[0], abs_box[1]), (abs_box[2], abs_box[3]), color, 2)
+                                    cv2.putText(frame, f"{class_name} {conf:.2f}", (abs_box[0], abs_box[1]-4),
+                                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+                        
+                        # If object detected and tracking started, stop processing more rectangles
+                        if cv_tracker.active:
+                            break
+                    
+                    # Draw motion detection rectangle AFTER object detection (so it's on top)
+                    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)  # Green for motion detection
+                    cv2.putText(frame, f"MOTION {rect_idx+1}", (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
 
         # After detection, update tracker if active
         frame = cv_tracker.update(frame)
@@ -300,7 +394,7 @@ try:
             if now - last_saved_time >= 1.0:
                 from datetime import datetime
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = os.path.join(save_dir, f"{timestamp}_person_track.jpg")
+                filename = os.path.join(save_dir, f"{timestamp}_object_track.jpg")
                 if IS_PI:
                     cv2.imwrite(filename, cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
                 else:
@@ -320,7 +414,7 @@ try:
                     cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
 
         if args.preview:
-            cv2.imshow("Motion+Car Detection", frame)
+            cv2.imshow("Motion+Object Detection", frame)
         if args.preview and cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
