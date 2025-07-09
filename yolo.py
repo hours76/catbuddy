@@ -11,12 +11,13 @@
 import cv2
 from ultralytics import YOLO
 import os
+import sys
 import time
 from datetime import datetime
 import argparse
 
 # ============================= Settings =============================
-MODEL_PATH   = "yolov8n.pt"   # Nano model (3 MB)
+MODEL_PATH   = "models/yolov8n.pt"   # Nano model (3 MB)
 IMG_SIZE     = 640             # Inference resolution
 CONF_THRESH  = 0.25
 NMS_THRESH   = 0.45
@@ -49,15 +50,42 @@ ARROW_TIME_WINDOW = 1.0  # Show movement over 1 second
 model = YOLO(MODEL_PATH)
 print(f"[INFO] Loaded YOLO model: {MODEL_PATH}")
 
-# ====================== Configure OpenCV Camera =====================
+# ====================== Configure Arguments =====================
 parser = argparse.ArgumentParser()
 parser.add_argument('--preview', action='store_true', help='Enable OpenCV preview window')
 parser.add_argument('--camera', type=int, default=0, help='Camera index for OpenCV (macOS/webcam)')
+parser.add_argument('--force-pi', action='store_true', help='Force use of PiCamera2 (Raspberry Pi)')
+parser.add_argument('--confidence', type=float, default=0.25, help='Confidence threshold for detection')
 args = parser.parse_args()
 
-cap = cv2.VideoCapture(args.camera)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+# Platform detection
+def is_raspberry_pi():
+    if args.force_pi:
+        return True
+    try:
+        with open('/proc/device-tree/model') as f:
+            return 'Raspberry Pi' in f.read()
+    except Exception:
+        return False
+
+IS_PI = is_raspberry_pi()
+
+# Initialize camera based on platform
+if IS_PI:
+    try:
+        from picamera2 import Picamera2 # type: ignore
+    except ImportError:
+        print("Please install picamera2: pip install picamera2")
+        sys.exit(1)
+    picam2 = Picamera2()
+    picam2.preview_configuration.main.size = (1920, 1080)
+    picam2.preview_configuration.main.format = "RGB888"
+    picam2.start()
+    time.sleep(2)
+else:
+    cap = cv2.VideoCapture(args.camera)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
 
 print("[INFO] Press q in the window or Ctrl+C in terminal to quit")
 
@@ -68,7 +96,7 @@ def draw_detection_boxes(frame, detections):
     
     for r in detections:
         for box, cls, conf in zip(r.boxes.xyxy, r.boxes.cls, r.boxes.conf):
-            if conf > CONF_THRESH:
+            if conf > args.confidence:
                 x1, y1, x2, y2 = map(int, box)
                 class_name = model.model.names[int(cls)]
                 center_x = (x1 + x2) // 2
@@ -139,14 +167,20 @@ def draw_detection_boxes(frame, detections):
 # ============================== Loop ================================
 try:
     while True:
-        ret, frame = cap.read()
-        if not ret:
-            print("Failed to capture frame from webcam.")
-            break
+        # Get frame based on platform
+        if IS_PI:
+            frame = picam2.capture_array()
+            frame = cv2.rotate(frame, cv2.ROTATE_180)
+        else:
+            ret, frame = cap.read()
+            if not ret:
+                print("Failed to capture frame from webcam.")
+                break
+        
         results = model(
             frame,
             imgsz=IMG_SIZE,
-            conf=CONF_THRESH,
+            conf=args.confidence,
             iou=NMS_THRESH,
             verbose=False,
         )
@@ -154,7 +188,7 @@ try:
 
         # Check if any object is detected and save
         any_detection = any(
-            conf > CONF_THRESH
+            conf > args.confidence
             for r in results for conf in r.boxes.conf
         )
         if any_detection:
@@ -164,11 +198,14 @@ try:
                 # Get the highest confidence detection for filename
                 best_detection = max(
                     [(model.model.names[int(cls)], conf) for r in results 
-                     for cls, conf in zip(r.boxes.cls, r.boxes.conf) if conf > CONF_THRESH],
+                     for cls, conf in zip(r.boxes.cls, r.boxes.conf) if conf > args.confidence],
                     key=lambda x: x[1], default=("object", 0)
                 )
                 filename = os.path.join(save_dir, f"{timestamp}_{best_detection[0]}.jpg")
-                cv2.imwrite(filename, frame)
+                if IS_PI:
+                    cv2.imwrite(filename, cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+                else:
+                    cv2.imwrite(filename, frame)
                 print(f"[INFO] Saved detection: {filename}")
                 last_saved_time = now
         else:
@@ -193,5 +230,9 @@ try:
 except KeyboardInterrupt:
     pass
 finally:
-    cap.release()
-    cv2.destroyAllWindows()
+    if args.preview:
+        cv2.destroyAllWindows()
+    if IS_PI:
+        picam2.close()
+    else:
+        cap.release()

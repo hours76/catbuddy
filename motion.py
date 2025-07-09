@@ -1,5 +1,4 @@
 import cv2
-import numpy as np
 import time
 import os
 import sys
@@ -10,6 +9,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--preview', action='store_true', help='Enable OpenCV preview window')
 parser.add_argument('--camera', type=int, default=0, help='Camera index for OpenCV (macOS/webcam)')
 parser.add_argument('--force-pi', action='store_true', help='Force use of PiCamera2 (Raspberry Pi)')
+parser.add_argument('--confidence', type=float, default=0.25, help='Confidence threshold for detection')
 args = parser.parse_args()
 
 # Platform detection
@@ -29,7 +29,7 @@ print(f"[INFO] Detected Raspberry Pi: {IS_PI}")
 # Initialize camera
 if IS_PI:
     try:
-        from picamera2 import Picamera2
+        from picamera2 import Picamera2 # type: ignore
     except ImportError:
         print("Please install picamera2: pip install picamera2")
         sys.exit(1)

@@ -48,7 +48,7 @@ import glob
 for file_path in glob.glob(os.path.join(save_dir, "*.jpg")):
     try:
         os.remove(file_path)
-        pass
+        print(f"[INFO] Removed: {file_path}")
     except Exception as e:
         print(f"[WARNING] Could not remove {file_path}: {e}")
 
@@ -66,7 +66,7 @@ ARROW_TIME_WINDOW = 1.0  # Show movement over 1 second
 # Platform detection
 def is_raspberry_pi():
     if args.force_pi:
-        pass
+        print('[INFO] Forcing Raspberry Pi mode via --force-pi')
         return True
     try:
         with open('/proc/device-tree/model') as f:
@@ -101,7 +101,6 @@ class_names = None
 
 if os.path.exists(TFLITE_MODEL):
     try:
-        pass
         interpreter = tf.lite.Interpreter(model_path=TFLITE_MODEL)
         interpreter.allocate_tensors()
         
@@ -109,9 +108,8 @@ if os.path.exists(TFLITE_MODEL):
         input_details = interpreter.get_input_details()
         output_details = interpreter.get_output_details()
         
-        pass
-        pass
         use_tflite = True
+        print(f"[INFO] Loaded TensorFlow Lite model: {TFLITE_MODEL}")
         
         # Load class names from ultralytics YOLO
         temp_model = YOLO(FALLBACK_MODEL)
@@ -122,7 +120,7 @@ if os.path.exists(TFLITE_MODEL):
         use_tflite = False
 
 if not use_tflite:
-    pass
+    print(f"[INFO] Using fallback PyTorch model: {FALLBACK_MODEL}")
     model = YOLO(FALLBACK_MODEL)
     class_names = model.model.names
 
@@ -351,7 +349,7 @@ try:
                         cv2.imwrite(filename, cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
                     else:
                         cv2.imwrite(filename, frame)
-                    pass
+                    print(f"[INFO] Saved detection: {filename}")
                     last_saved_time = now
 
         # Calculate and display FPS
