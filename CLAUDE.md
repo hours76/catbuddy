@@ -27,9 +27,10 @@ pip install picamera2
 
 ## Model Files
 
-The project uses YOLOv8 model files:
-- `yolov8n.pt`: Nano model (used by default in triple.py)
-- `yolov8l.pt`: Large model (available but not used by default)
+The project uses YOLOv8 model files located in the `models/` directory:
+- `models/yolov8n.pt`: Nano model (used by default in triple.py)
+- `models/yolov8n_int8.tflite`: TensorFlow Lite quantized model (used by yolo_tflite.py)
+- `models/yolov8l.pt`: Large model (available but not used by default)
 
 ## Running the Scripts
 
@@ -123,4 +124,4 @@ In `triple.py`, adjust `MOTION_SENSITIVITY` (default: 500) to control motion det
 - Save directories: `{type}_captures/`
 - save picture as fast as one per second
 - clear all files before starting
-- Use .gitignore for captures directories and .pt files
+- Use .gitignore for captures directories and model files (models/)

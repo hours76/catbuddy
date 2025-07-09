@@ -4,7 +4,7 @@ motion_captures/
 yolo_captures/
 
 # Model files
-*.pt
+models/
 
 # Python cache
 __pycache__/
@@ -12,3 +12,10 @@ __pycache__/
 *.pyo
 .DS_Store
 .vscode/launch.json
+
+# Virtual environment
+.venv*
+
+# Local settings
+.claude/
+.vscode/
