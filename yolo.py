@@ -27,13 +27,15 @@ os.makedirs(save_dir, exist_ok=True)
 
 # Clear all existing pictures before starting
 import glob
+files_removed = 0
 for file_path in glob.glob(os.path.join(save_dir, "*.jpg")):
     try:
         os.remove(file_path)
-        print(f"[INFO] Removed: {file_path}")
+        files_removed += 1
     except Exception as e:
         print(f"[WARNING] Could not remove {file_path}: {e}")
-print(f"[INFO] Cleared all existing images from {save_dir}")
+if files_removed > 0:
+    print(f"[INFO] Cleared {files_removed} existing images from {save_dir}")
 
 last_saved_time = 0
 
@@ -46,17 +48,36 @@ fps_display = 0.0
 object_positions = {}  # {class_name: [(center_x, center_y, timestamp), ...]}
 ARROW_TIME_WINDOW = 1.0  # Show movement over 1 second
 
-# ====================== Load YOLO model ====================
-model = YOLO(MODEL_PATH)
-print(f"[INFO] Loaded YOLO model: {MODEL_PATH}")
-
 # ====================== Configure Arguments =====================
 parser = argparse.ArgumentParser()
 parser.add_argument('--preview', action='store_true', help='Enable OpenCV preview window')
 parser.add_argument('--camera', type=int, default=0, help='Camera index for OpenCV (macOS/webcam)')
 parser.add_argument('--force-pi', action='store_true', help='Force use of PiCamera2 (Raspberry Pi)')
 parser.add_argument('--confidence', type=float, default=0.25, help='Confidence threshold for detection')
+parser.add_argument('--fps', type=float, default=0, help='Limit processing FPS (0 = unlimited)')
+parser.add_argument('--cpu', action='store_true', help='Force CPU-only execution (disable Metal)')
 args = parser.parse_args()
+
+# ====================== Load YOLO model ====================
+model = YOLO(MODEL_PATH)
+print(f"[INFO] Loaded YOLO model: {MODEL_PATH}")
+
+# Enable Metal (MPS) acceleration if available
+import torch
+if torch.backends.mps.is_available() and not args.cpu:
+    try:
+        device = torch.device('mps')
+        model.model = model.model.to(device)
+        print(f"[INFO] Using Metal Performance Shaders (MPS) acceleration")
+        print(f"[INFO] Model device: {next(model.model.parameters()).device}")
+    except Exception as e:
+        print(f"[WARNING] Failed to move model to MPS: {e}")
+        print(f"[INFO] Falling back to CPU")
+else:
+    if args.cpu:
+        print(f"[INFO] CPU-only mode requested")
+    else:
+        print(f"[INFO] MPS not available, using CPU")
 
 # Platform detection
 def is_raspberry_pi():
@@ -165,8 +186,24 @@ def draw_detection_boxes(frame, detections):
     return frame
 
 # ============================== Loop ================================
+# FPS limiting variables
+frame_time_target = 1.0 / args.fps if args.fps > 0 else 0
+last_frame_time = time.time()
+
+if args.fps > 0:
+    print(f"[INFO] FPS limited to {args.fps} FPS")
+else:
+    print("[INFO] FPS unlimited")
+
 try:
     while True:
+        # FPS limiting
+        if args.fps > 0:
+            current_time = time.time()
+            elapsed = current_time - last_frame_time
+            if elapsed < frame_time_target:
+                time.sleep(frame_time_target - elapsed)
+            last_frame_time = time.time()
         # Get frame based on platform
         if IS_PI:
             frame = picam2.capture_array()
@@ -177,6 +214,8 @@ try:
                 print("Failed to capture frame from webcam.")
                 break
         
+        # Time the inference
+        inference_start = time.time()
         results = model(
             frame,
             imgsz=IMG_SIZE,
@@ -184,6 +223,11 @@ try:
             iou=NMS_THRESH,
             verbose=False,
         )
+        inference_time = (time.time() - inference_start) * 1000  # Convert to milliseconds
+        
+        # Print timing info every 30 frames
+        if fps_counter % 30 == 0:
+            print(f"[DEBUG] Inference time: {inference_time:.1f}ms")
         frame = draw_detection_boxes(frame, results)
 
         # Check if any object is detected and save

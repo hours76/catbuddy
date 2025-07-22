@@ -10,6 +10,7 @@ parser.add_argument('--preview', action='store_true', help='Enable OpenCV previe
 parser.add_argument('--camera', type=int, default=0, help='Camera index for OpenCV (macOS/webcam)')
 parser.add_argument('--force-pi', action='store_true', help='Force use of PiCamera2 (Raspberry Pi)')
 parser.add_argument('--confidence', type=float, default=0.25, help='Confidence threshold for detection')
+parser.add_argument('--fps', type=float, default=0, help='Limit processing FPS (0 = unlimited)')
 args = parser.parse_args()
 
 # Platform detection
@@ -65,8 +66,24 @@ fps_counter = 0
 fps_start_time = time.time()
 fps_display = 0.0
 
+# FPS limiting variables
+frame_time_target = 1.0 / args.fps if args.fps > 0 else 0
+last_frame_time = time.time()
+
+if args.fps > 0:
+    print(f"[INFO] FPS limited to {args.fps} FPS")
+else:
+    print("[INFO] FPS unlimited")
+
 try:
     while True:
+        # FPS limiting
+        if args.fps > 0:
+            current_time = time.time()
+            elapsed = current_time - last_frame_time
+            if elapsed < frame_time_target:
+                time.sleep(frame_time_target - elapsed)
+            last_frame_time = time.time()
         # Get frame
         if IS_PI:
             frame = picam2.capture_array()

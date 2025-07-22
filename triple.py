@@ -63,7 +63,7 @@ else:
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
 
 model = YOLO("models/yolov8n.pt")
-object_class_id = next(k for k, v in model.model.names.items() if v.lower() == "person")
+object_class_id = next(k for k, v in model.model.names.items() if v.lower() == "cat")
 
 prev_gray = None
 
@@ -98,50 +98,23 @@ class CVTracker:
         self.curr_center = ((x1 + x2) // 2, (y1 + y2) // 2)
         self.last_movement_time = time.time()
         tracker_bbox = (x1, y1, x2 - x1, y2 - y1)
-        # Try multiple tracker types with comprehensive fallback
+        # Try CSRT first (best performance), fallback to MIL
         self.tracker = None
-        tracker_types = ["CSRT", "KCF", "MOSSE", "MIL", "BOOSTING", "TLD", "MEDIANFLOW"]
+        tracker_types = ["CSRT", "MIL"]
         
         for tracker_name in tracker_types:
             try:
-                # Try modern OpenCV tracker creation
                 if tracker_name == "CSRT":
                     if hasattr(cv2, 'TrackerCSRT_create'):
-                        self.tracker = cv2.TrackerCSRT_create()
+                        self.tracker = cv2.TrackerCSRT_create()  # type: ignore
                     elif hasattr(cv2, 'legacy') and hasattr(cv2.legacy, 'TrackerCSRT_create'):
-                        self.tracker = cv2.legacy.TrackerCSRT_create()
-                elif tracker_name == "KCF":
-                    if hasattr(cv2, 'TrackerKCF_create'):
-                        self.tracker = cv2.TrackerKCF_create()
-                    elif hasattr(cv2, 'legacy') and hasattr(cv2.legacy, 'TrackerKCF_create'):
-                        self.tracker = cv2.legacy.TrackerKCF_create()
-                elif tracker_name == "MOSSE":
-                    if hasattr(cv2, 'TrackerMOSSE_create'):
-                        self.tracker = cv2.TrackerMOSSE_create()
-                    elif hasattr(cv2, 'legacy') and hasattr(cv2.legacy, 'TrackerMOSSE_create'):
-                        self.tracker = cv2.legacy.TrackerMOSSE_create()
+                        self.tracker = cv2.legacy.TrackerCSRT_create()  # type: ignore
                 elif tracker_name == "MIL":
                     if hasattr(cv2, 'TrackerMIL_create'):
-                        self.tracker = cv2.TrackerMIL_create()
+                        self.tracker = cv2.TrackerMIL_create()  # type: ignore
                     elif hasattr(cv2, 'legacy') and hasattr(cv2.legacy, 'TrackerMIL_create'):
-                        self.tracker = cv2.legacy.TrackerMIL_create()
-                elif tracker_name == "BOOSTING":
-                    if hasattr(cv2, 'TrackerBoosting_create'):
-                        self.tracker = cv2.TrackerBoosting_create()
-                    elif hasattr(cv2, 'legacy') and hasattr(cv2.legacy, 'TrackerBoosting_create'):
-                        self.tracker = cv2.legacy.TrackerBoosting_create()
-                elif tracker_name == "TLD":
-                    if hasattr(cv2, 'TrackerTLD_create'):
-                        self.tracker = cv2.TrackerTLD_create()
-                    elif hasattr(cv2, 'legacy') and hasattr(cv2.legacy, 'TrackerTLD_create'):
-                        self.tracker = cv2.legacy.TrackerTLD_create()
-                elif tracker_name == "MEDIANFLOW":
-                    if hasattr(cv2, 'TrackerMedianFlow_create'):
-                        self.tracker = cv2.TrackerMedianFlow_create()
-                    elif hasattr(cv2, 'legacy') and hasattr(cv2.legacy, 'TrackerMedianFlow_create'):
-                        self.tracker = cv2.legacy.TrackerMedianFlow_create()
+                        self.tracker = cv2.legacy.TrackerMIL_create()  # type: ignore
                 
-                # If tracker was created successfully, try to initialize it
                 if self.tracker is not None:
                     self.tracker.init(frame, tracker_bbox)
                     print(f"[INFO] Successfully initialized {tracker_name} tracker")
@@ -184,39 +157,40 @@ class CVTracker:
                         self.curr_center = None
             else:
                 # Use OpenCV tracker
-                ok, bbox = self.tracker.update(frame)
-                if ok:
-                    x, y, w, h = [int(v) for v in bbox]
-                    self.last_bbox = (x, y, x + w, y + h)
-                    self.prev_center = self.curr_center
-                    self.curr_center = (x + w // 2, y + h // 2)
-                    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 2)
-                    cv2.putText(frame, 'Tracking', (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-                    movement = 0
-                    if self.prev_center and self.curr_center:
-                        cv2.arrowedLine(frame, self.prev_center, self.curr_center, (255, 0, 255), 2, tipLength=0.3)
-                        dx = self.curr_center[0] - self.prev_center[0]
-                        dy = self.curr_center[1] - self.prev_center[1]
-                        movement = (dx**2 + dy**2) ** 0.5
-                        print(f"Movement vector: dx={dx}, dy={dy}, movement={movement:.2f}")
-                        # If movement is significant, update last_movement_time
-                        if movement >= 10:
-                            self.last_movement_time = time.time()
-                    self.last_seen = time.time()
-                    # Stop tracking if only small movement (<10) for 3 seconds
-                    if time.time() - self.last_movement_time > 3.0:
-                        print("[INFO] Only small movement (<10) for 3 seconds, stopping tracker.")
-                        self.active = False
+                if self.tracker is not None and hasattr(self.tracker, 'update'):
+                    ok, bbox = self.tracker.update(frame)
+                    if ok:
+                        x, y, w, h = [int(v) for v in bbox]
+                        self.last_bbox = (x, y, x + w, y + h)
+                        self.prev_center = self.curr_center
+                        self.curr_center = (x + w // 2, y + h // 2)
+                        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 2)
+                        cv2.putText(frame, 'Tracking', (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                        movement = 0
+                        if self.prev_center and self.curr_center:
+                            cv2.arrowedLine(frame, self.prev_center, self.curr_center, (255, 0, 255), 2, tipLength=0.3)
+                            dx = self.curr_center[0] - self.prev_center[0]
+                            dy = self.curr_center[1] - self.prev_center[1]
+                            movement = (dx**2 + dy**2) ** 0.5
+                            print(f"Movement vector: dx={dx}, dy={dy}, movement={movement:.2f}")
+                            # If movement is significant, update last_movement_time
+                            if movement >= 10:
+                                self.last_movement_time = time.time()
+                        self.last_seen = time.time()
+                        # Stop tracking if only small movement (<10) for 3 seconds
+                        if time.time() - self.last_movement_time > 3.0:
+                            print("[INFO] Only small movement (<10) for 3 seconds, stopping tracker.")
+                            self.active = False
+                            self.tracker = None
+                            self.last_bbox = None
+                            self.prev_center = None
+                            self.curr_center = None
+                    else:
+                        self.active = False  # Lost tracking, return to motion detection
                         self.tracker = None
                         self.last_bbox = None
                         self.prev_center = None
                         self.curr_center = None
-                else:
-                    self.active = False  # Lost tracking, return to motion detection
-                    self.tracker = None
-                    self.last_bbox = None
-                    self.prev_center = None
-                    self.curr_center = None
         return frame
 
 cv_tracker = CVTracker()
@@ -264,7 +238,8 @@ try:
             # Motion detection
             frame_delta = cv2.absdiff(prev_gray, gray)
             thresh = cv2.threshold(frame_delta, 25, 255, cv2.THRESH_BINARY)[1]
-            thresh = cv2.dilate(thresh, None, iterations=2)
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+            thresh = cv2.dilate(thresh, kernel, iterations=2)
             contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
             # Get all valid contours above threshold
@@ -350,7 +325,10 @@ try:
                                 x1, y1, x2, y2 = map(int, box)
                                 # Adjust coordinates back to original frame (account for padding)
                                 abs_box = (padded_x+x1, padded_y+y1, padded_x+x2, padded_y+y2)
-                                class_name = model.model.names[int(cls)]
+                                if hasattr(model, 'model') and model.model is not None and hasattr(model.model, 'names'):
+                                    class_name = model.model.names[int(cls)]  # type: ignore
+                                else:
+                                    class_name = f"class_{int(cls)}"
                                 
                                 # Different colors for different object types
                                 if int(cls) == object_class_id:
