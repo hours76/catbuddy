@@ -99,14 +99,14 @@ if IS_PI:
         print("Please install picamera2: pip install picamera2")
         sys.exit(1)
     picam2 = Picamera2()
-    picam2.preview_configuration.main.size = (1920, 1080)
+    picam2.preview_configuration.main.size = (800, 600)
     picam2.preview_configuration.main.format = "RGB888"
     picam2.start()
     time.sleep(2)
 else:
     cap = cv2.VideoCapture(args.camera)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 800)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 600)
 
 print("[INFO] Press q in the window or Ctrl+C in terminal to quit")
 
