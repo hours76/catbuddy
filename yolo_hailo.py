@@ -178,9 +178,11 @@ try:
             time.sleep(0.01)
             continue
 
-        # Ensure BGR for cv2 (picamera2 RGB888 actually returns BGR)
+        # Ensure BGR for cv2 (picamera2 RGB888 actually delivers RGB, convert for display)
         if frame.shape[2] == 4:
             frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+        else:
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
         with det_lock:
             detections = list(latest_detections)
@@ -205,7 +207,7 @@ try:
 
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
             cv2.putText(frame, f"{label} {conf:.2f}",
-                        (x1, y1 - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+                        (x1, max(y1 - 6, 15)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
         # FPS
         fps_counter += 1
