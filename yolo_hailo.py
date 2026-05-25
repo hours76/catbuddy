@@ -190,6 +190,7 @@ try:
 
         h, w = frame.shape[:2]
         cat_detected = False
+        cat_moving = False
         now = time.time()
 
         for det in detections:
@@ -239,6 +240,7 @@ try:
                 if start_pos:
                     dist = ((cx - start_pos[0])**2 + (cy - start_pos[1])**2) ** 0.5
                     if dist > 10:
+                        cat_moving = True
                         cv2.arrowedLine(frame, start_pos, (cx, cy), (255, 0, 255), 2, tipLength=0.3)
                         cv2.putText(frame, f"1s:{dist:.0f}px", (cx + 8, cy),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 0, 255), 1)
@@ -257,8 +259,8 @@ try:
         cv2.putText(frame, f"FPS: {fps_display:.1f}",
                     (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
 
-        # Save if cat detected
-        if cat_detected and (now - last_saved_time) >= SAVE_INTERVAL:
+        # Save only when cat is moving
+        if cat_moving and (now - last_saved_time) >= SAVE_INTERVAL:
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             path = os.path.join(SAVE_DIR, f"{ts}_cat.jpg")
             cv2.imwrite(path, frame)
