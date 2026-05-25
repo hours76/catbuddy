@@ -210,10 +210,11 @@ try:
             cx = (x1 + x2) // 2
             cy = (y1 + y2) // 2
 
-            # Track position history
-            if label not in object_positions:
-                object_positions[label] = []
-            object_positions[label].append((cx, cy, now))
+            # Track position history — cat only
+            if is_cat:
+                if label not in object_positions:
+                    object_positions[label] = []
+                object_positions[label].append((cx, cy, now))
 
             cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
 
@@ -225,19 +226,20 @@ try:
             cv2.rectangle(frame, (tx, ty - th - 2), (tx + tw, ty + 2), (0, 0, 0), -1)
             cv2.putText(frame, text, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
-            # Draw movement arrow from position 1 second ago
-            positions = object_positions.get(label, [])
-            start_pos = None
-            for px, py, pt in positions:
-                if now - pt >= ARROW_TIME_WINDOW:
-                    start_pos = (px, py)
-                    break
-            if start_pos:
-                dist = ((cx - start_pos[0])**2 + (cy - start_pos[1])**2) ** 0.5
-                if dist > 10:
-                    cv2.arrowedLine(frame, start_pos, (cx, cy), (255, 0, 255), 2, tipLength=0.3)
-                    cv2.putText(frame, f"1s:{dist:.0f}px", (cx + 8, cy),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 0, 255), 1)
+            # Draw movement arrow — cat only
+            if is_cat:
+                positions = object_positions.get(label, [])
+                start_pos = None
+                for px, py, pt in positions:
+                    if now - pt >= ARROW_TIME_WINDOW:
+                        start_pos = (px, py)
+                        break
+                if start_pos:
+                    dist = ((cx - start_pos[0])**2 + (cy - start_pos[1])**2) ** 0.5
+                    if dist > 10:
+                        cv2.arrowedLine(frame, start_pos, (cx, cy), (255, 0, 255), 2, tipLength=0.3)
+                        cv2.putText(frame, f"1s:{dist:.0f}px", (cx + 8, cy),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 0, 255), 1)
 
         # Clean up old positions (> 2 seconds)
         for key in list(object_positions.keys()):
