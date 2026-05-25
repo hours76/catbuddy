@@ -15,4 +15,7 @@ rsync -avz --exclude='models/' \
            --exclude='.DS_Store' \
            ./ $REMOTE:$REMOTE_DIR/
 
+# Remove stale files that were renamed
+ssh $REMOTE "rm -f $REMOTE_DIR/hailo.py"
+
 echo "Done."
