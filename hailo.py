@@ -158,11 +158,9 @@ try:
             time.sleep(0.01)
             continue
 
-        # Ensure BGR for cv2 (picamera2 may return BGRA or RGB depending on format)
+        # Ensure BGR for cv2 (picamera2 RGB888 actually returns BGR)
         if frame.shape[2] == 4:
             frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
-        else:
-            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
         with det_lock:
             detections = list(latest_detections)
