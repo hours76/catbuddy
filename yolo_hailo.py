@@ -203,9 +203,11 @@ try:
             is_cat = label.lower() == TARGET_LABEL
             if is_cat:
                 cat_detected = True
-                box_color = (0, 255, 0)   # green for cat
+                box_color = (0, 255, 0)     # green for cat
+                text_color = (255, 255, 255) # white label
             else:
-                box_color = (0, 165, 255)  # orange for others
+                box_color = (128, 128, 128)  # grey for others
+                text_color = (180, 180, 180) # grey label
 
             cx = (x1 + x2) // 2
             cy = (y1 + y2) // 2
@@ -224,7 +226,7 @@ try:
             tx = max(x2 - tw, 0)
             ty = max(y1 - 4, th + 2)
             cv2.rectangle(frame, (tx, ty - th - 2), (tx + tw, ty + 2), (0, 0, 0), -1)
-            cv2.putText(frame, text, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            cv2.putText(frame, text, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, 0.5, text_color, 1)
 
             # Draw movement arrow — cat only
             if is_cat:
