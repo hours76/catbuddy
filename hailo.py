@@ -158,6 +158,12 @@ try:
             time.sleep(0.01)
             continue
 
+        # Ensure BGR for cv2 (picamera2 may return BGRA or RGB depending on format)
+        if frame.shape[2] == 4:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+        else:
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+
         with det_lock:
             detections = list(latest_detections)
 
@@ -197,13 +203,12 @@ try:
         if cat_detected and (now - last_saved_time) >= SAVE_INTERVAL:
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             path = os.path.join(SAVE_DIR, f"{ts}_cat.jpg")
-            cv2.imwrite(path, cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+            cv2.imwrite(path, frame)
             last_saved_time = now
             print(f"[INFO] Saved: {path}")
 
         if args.preview:
-            cv2.imshow("Hailo Cat Detection - press q to quit",
-                       cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+            cv2.imshow("Hailo Cat Detection - press q to quit", frame)
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
 
