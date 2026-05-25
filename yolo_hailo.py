@@ -178,11 +178,9 @@ try:
             time.sleep(0.01)
             continue
 
-        # Ensure BGR for cv2 (picamera2 RGB888 actually delivers RGB, convert for display)
+        # picamera2 RGB888 via capture_array("main") delivers BGR — use directly
         if frame.shape[2] == 4:
             frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
-        else:
-            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
         with det_lock:
             detections = list(latest_detections)
@@ -201,13 +199,19 @@ try:
             is_cat = label.lower() == TARGET_LABEL
             if is_cat:
                 cat_detected = True
-                color = (0, 255, 0)   # green for cat
+                box_color = (0, 255, 0)   # green for cat
             else:
-                color = (128, 128, 128)  # gray for others
+                box_color = (0, 165, 255)  # orange for others
 
-            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-            cv2.putText(frame, f"{label} {conf:.2f}",
-                        (x1, max(y1 - 6, 15)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+            cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
+
+            # Label: white text on dark background, top-right corner of bbox
+            text = f"{label} {conf:.2f}"
+            (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+            tx = max(x2 - tw, 0)
+            ty = max(y1 - 4, th + 2)
+            cv2.rectangle(frame, (tx, ty - th - 2), (tx + tw, ty + 2), (0, 0, 0), -1)
+            cv2.putText(frame, text, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
         # FPS
         fps_counter += 1
