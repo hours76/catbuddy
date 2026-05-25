@@ -73,18 +73,20 @@ config = picam2.create_preview_configuration(
 )
 picam2.configure(config)
 picam2.start()
+print(f"[INFO] Camera started: {CAMERA_WIDTH}x{CAMERA_HEIGHT}", flush=True)
 time.sleep(1)
-print(f"[INFO] Camera started: {CAMERA_WIDTH}x{CAMERA_HEIGHT}")
 
 # ============================= Hailo pipeline ======================
+print("[INFO] Initializing GStreamer...", flush=True)
 Gst.init(None)
+print("[INFO] GStreamer initialized", flush=True)
 
 PIPELINE_STR = (
     f"appsrc name=src is-live=true format=time ! "
     f"video/x-raw,format=RGB,width={INFER_SIZE},height={INFER_SIZE},framerate=30/1 ! "
     f"videoconvert ! "
     f"queue leaky=no max-size-buffers=3 ! "
-    f"hailonet hef-path={HEF_PATH} batch-size=1 "
+    f"hailonet hef-path={HEF_PATH} batch-size=1 force-writable=true "
     f"nms-score-threshold={CONF_THRESH} nms-iou-threshold=0.45 "
     f"output-format-type=HAILO_FORMAT_TYPE_FLOAT32 ! "
     f"queue leaky=no max-size-buffers=3 ! "
@@ -94,37 +96,55 @@ PIPELINE_STR = (
     f"fakesink"
 )
 
+print("[INFO] Parsing pipeline...", flush=True)
 pipeline = Gst.parse_launch(PIPELINE_STR)
+print("[INFO] Pipeline parsed", flush=True)
 appsrc = pipeline.get_by_name("src")
 det_sink = pipeline.get_by_name("det_sink")
+print("[INFO] Got pipeline elements", flush=True)
+
+_probe_call_count = 0
 
 def on_detection(pad, info):
-    global latest_detections
+    global latest_detections, _probe_call_count
+    _probe_call_count += 1
+    if _probe_call_count <= 3 or _probe_call_count % 100 == 0:
+        print(f"[DEBUG] probe called #{_probe_call_count}", flush=True)
     buffer = info.get_buffer()
     if buffer is None:
+        print("[DEBUG] buffer is None")
         return Gst.PadProbeReturn.OK
-    roi = hailo.get_roi_from_buffer(buffer)
-    detections = []
-    for det in roi.get_objects_typed(hailo.HAILO_DETECTION):
-        label = det.get_label()
-        conf = det.get_confidence()
-        bbox = det.get_bbox()
-        detections.append({
-            "label": label,
-            "conf": conf,
-            "xmin": bbox.xmin(),
-            "ymin": bbox.ymin(),
-            "xmax": bbox.xmax(),
-            "ymax": bbox.ymax(),
-        })
-    with det_lock:
-        latest_detections = detections
+    try:
+        roi = hailo.get_roi_from_buffer(buffer)
+        objects = roi.get_objects_typed(hailo.HAILO_DETECTION)
+        if _probe_call_count <= 3:
+            print(f"[DEBUG] detections count: {len(objects)}")
+        detections = []
+        for det in objects:
+            label = det.get_label()
+            conf = det.get_confidence()
+            bbox = det.get_bbox()
+            detections.append({
+                "label": label,
+                "conf": conf,
+                "xmin": bbox.xmin(),
+                "ymin": bbox.ymin(),
+                "xmax": bbox.xmax(),
+                "ymax": bbox.ymax(),
+            })
+        with det_lock:
+            latest_detections = detections
+    except Exception as e:
+        if _probe_call_count <= 3:
+            print(f"[DEBUG] probe exception: {e}")
     return Gst.PadProbeReturn.OK
 
-det_sink.get_static_pad("src").add_probe(Gst.PadProbeType.BUFFER, on_detection)
-
+# Try sink pad (receives buffer with hailo metadata attached)
+print("[INFO] Adding probe...", flush=True)
+det_sink.get_static_pad("sink").add_probe(Gst.PadProbeType.BUFFER, on_detection)
+print("[INFO] Probe added, starting pipeline...", flush=True)
 pipeline.set_state(Gst.State.PLAYING)
-print("[INFO] Hailo pipeline started")
+print("[INFO] Hailo pipeline started", flush=True)
 
 # ============================= Feed thread =========================
 def feed_frames():
