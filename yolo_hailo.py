@@ -12,6 +12,7 @@
 import os
 import sys
 import time
+import pilot
 import argparse
 import threading
 from datetime import datetime
@@ -32,7 +33,7 @@ from picamera2 import Picamera2
 HEF_PATH        = "/usr/local/hailo/resources/models/hailo8l/yolov8s.hef"
 POST_SO_PATH    = "/usr/lib/aarch64-linux-gnu/hailo/tappas/post_processes/libyolo_hailortpp_post.so"
 CONF_THRESH     = 0.40          # Only show detections above this confidence
-TARGET_LABEL    = "cat"         # Label to highlight (all labels shown, cat highlighted)
+TARGET_LABEL    = "person"      # Label to highlight (all labels shown, target highlighted)
 CAMERA_WIDTH    = 1280
 CAMERA_HEIGHT   = 720
 INFER_SIZE      = 640           # Hailo model input size
@@ -144,6 +145,8 @@ det_sink.get_static_pad("sink").add_probe(Gst.PadProbeType.BUFFER, on_detection)
 print("[INFO] Probe added, starting pipeline...", flush=True)
 pipeline.set_state(Gst.State.PLAYING)
 print("[INFO] Hailo pipeline started", flush=True)
+pilot.start()
+print("[INFO] Pilot started", flush=True)
 
 # ============================= Tracking state ======================
 object_positions = {}  # {label: [(cx, cy, timestamp), ...]}
@@ -188,7 +191,11 @@ try:
             detections = list(latest_detections)
 
         h, w = frame.shape[:2]
-        cat_detected = False
+        frame_cx = w // 2
+        frame_cy = h // 2
+        target_detected = False
+        target_cx = 0
+        target_cy = 0
         cat_moving = False
         now = time.time()
 
@@ -200,17 +207,19 @@ try:
             x2 = int(det["xmax"] * w)
             y2 = int(det["ymax"] * h)
 
+            cx = (x1 + x2) // 2
+            cy = (y1 + y2) // 2
+
             is_cat = label.lower() == TARGET_LABEL
             if is_cat:
-                cat_detected = True
-                box_color = (0, 255, 0)     # green for cat
+                target_detected = True
+                target_cx = cx
+                target_cy = cy
+                box_color = (0, 255, 0)     # green for target
                 text_color = (255, 255, 255) # white label
             else:
                 box_color = (128, 128, 128)  # grey for others
                 text_color = (180, 180, 180) # grey label
-
-            cx = (x1 + x2) // 2
-            cy = (y1 + y2) // 2
 
             # Track position history — cat only
             if is_cat:
@@ -258,6 +267,15 @@ try:
         cv2.putText(frame, f"FPS: {fps_display:.1f}",
                     (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
 
+        # Update pilot state
+        pilot.update_state(
+            detected=target_detected,
+            cx=target_cx,
+            cy=target_cy,
+            dx=target_cx - frame_cx if target_detected else 0,
+            dy=target_cy - frame_cy if target_detected else 0,
+        )
+
         # Save only when cat is moving
         if cat_moving and (now - last_saved_time) >= SAVE_INTERVAL:
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -277,6 +295,7 @@ except KeyboardInterrupt:
     pass
 finally:
     running = False
+    pilot.stop_pilot()
     pipeline.set_state(Gst.State.NULL)
     picam2.stop()
     if args.preview:
