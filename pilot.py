@@ -29,7 +29,8 @@ SPIN_ZONE        = 200   # pixels — dx beyond this → full spin (no forward c
 BASE_SPEED       = 1000  # forward speed
 STEER_K          = 4.0   # dx-to-speed scaling factor
 LOOP_HZ          = 10    # pilot update rate
-CONFIRM_SECS     = 0.5   # seconds of continuous detection before acting
+CONFIRM_SECS     = 0.3   # seconds of continuous detection before first move
+GRACE_SECS       = 0.3   # seconds to keep moving after losing detection
 
 # ── shared state (written by yolo_hailo, read by pilot) ──────────────────────
 tracking_state = {
@@ -41,18 +42,25 @@ tracking_state = {
 }
 _state_lock = threading.Lock()
 _first_detected_time = None   # when continuous detection started
+_last_detected_time  = None   # when detection was last seen
 
 def update_state(detected, cx=0, cy=0, dx=0, dy=0):
     """Called by yolo_hailo each frame to update tracking state."""
-    global _first_detected_time
+    global _first_detected_time, _last_detected_time
     with _state_lock:
+        now = time.time()
         if detected:
             if _first_detected_time is None:
-                _first_detected_time = time.time()
-            confirmed = (time.time() - _first_detected_time) >= CONFIRM_SECS
+                _first_detected_time = now
+            _last_detected_time = now
+            confirmed = (now - _first_detected_time) >= CONFIRM_SECS
         else:
             _first_detected_time = None
-            confirmed = False
+            # grace period: keep confirmed=True for GRACE_SECS after last detection
+            if _last_detected_time is not None and (now - _last_detected_time) < GRACE_SECS:
+                confirmed = True
+            else:
+                confirmed = False
 
         tracking_state["detected"] = confirmed
         tracking_state["cx"] = cx
