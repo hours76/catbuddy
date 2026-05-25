@@ -25,6 +25,7 @@ gi.require_version('Gst', '1.0')
 from gi.repository import Gst, GLib
 
 import hailo
+import libcamera
 from picamera2 import Picamera2
 
 # ============================= Settings =============================
@@ -67,7 +68,8 @@ running = True
 picam2 = Picamera2()
 config = picam2.create_preview_configuration(
     main={"size": (CAMERA_WIDTH, CAMERA_HEIGHT), "format": "RGB888"},
-    lores={"size": (INFER_SIZE, INFER_SIZE), "format": "RGB888"}
+    lores={"size": (INFER_SIZE, INFER_SIZE), "format": "RGB888"},
+    transform=libcamera.Transform(hflip=1, vflip=1)  # rotate 180 degrees
 )
 picam2.configure(config)
 picam2.start()
