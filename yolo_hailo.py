@@ -36,15 +36,14 @@ TARGET_LABEL    = "cat"         # Label to highlight (all labels shown, cat high
 CAMERA_WIDTH    = 1280
 CAMERA_HEIGHT   = 720
 INFER_SIZE      = 640           # Hailo model input size
-SAVE_DIR        = "hailo_captures"
 SAVE_INTERVAL   = 1.0           # Minimum seconds between saves
 
-os.makedirs(SAVE_DIR, exist_ok=True)
+os.makedirs("hailo_captures", exist_ok=True)  # base dir
 
-# Clear existing captures
-import glob
-for f in glob.glob(f"{SAVE_DIR}/*.jpg"):
-    os.remove(f)
+# Session folder named by start datetime
+_session_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+SAVE_DIR = os.path.join("hailo_captures", _session_ts)
+os.makedirs(SAVE_DIR, exist_ok=True)
 
 # ============================= Args ================================
 parser = argparse.ArgumentParser(description="Cat detection with Hailo AI Hat")
