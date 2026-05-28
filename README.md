@@ -19,7 +19,6 @@ AI robot that chases cats — Raspberry Pi 5 + Hailo AI Hat + Pi Camera Module 3
 The primary script. Runs YOLOv8s on Hailo-8L (~80+ FPS) and drives the robot to chase the detected target.
 
 ```bash
-source ~/work/hailo-rpi5-examples/setup_env.sh
 python yolo_hailo.py [--preview] [--confidence 0.40]
 ```
 
