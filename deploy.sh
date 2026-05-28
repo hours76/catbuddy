@@ -13,6 +13,9 @@ rsync -avz --exclude='models/' \
            --exclude='*.pyc' \
            --exclude='.git/' \
            --exclude='.DS_Store' \
+           --exclude='deploy.sh' \
+           --exclude='CLAUDE.md' \
+           --exclude='opt/' \
            ./ $REMOTE:$REMOTE_DIR/
 
 # Remove stale files that were renamed
