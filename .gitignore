@@ -2,6 +2,7 @@
 triple_captures/
 motion_captures/
 yolo_captures/
+hailo_captures/
 
 # Model files
 models/
